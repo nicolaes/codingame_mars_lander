@@ -189,7 +189,7 @@ while True:
     
     # direction of thrust cosnidering gravity
     mars_gravity_vector = ((0, 0), (0, -mars_g))
-    target_thrust = np_to_tuple(np.subtract(mars_gravity_vector, target_delta))
+    target_thrust = np_to_tuple(np.subtract(target_delta, mars_gravity_vector))
 
     #thrust_abs_angle = vector_rho(target_thrust)
     
