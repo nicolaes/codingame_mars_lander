@@ -203,7 +203,7 @@ while True:
 
     # thrust vector to magnitude
     thrust_mag = -magnitude(target_thrust)
-    if (thrust_mag < 0): thrust_mag = 0
+    if (thrust_mag < 2): thrust_mag = 3
     if (thrust_mag > 4): thrust_mag = 4
     thrust_mag = round(thrust_mag)
 
