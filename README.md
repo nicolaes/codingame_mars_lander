@@ -1,4 +1,4 @@
-# 🚩 Consider solving the challenge before reading this code 🚩
+# 🚩 Consider solving the challenge before reading code 🚩
 
 ### CodinGame algo for Mars Lander game
 
