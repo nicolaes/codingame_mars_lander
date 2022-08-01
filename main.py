@@ -191,18 +191,19 @@ while True:
     mars_gravity_vector = ((0, 0), (0, -mars_g))
     target_thrust = np_to_tuple(np.subtract(target_delta, mars_gravity_vector))
 
-    #thrust_abs_angle = vector_rho(target_thrust)
-    
-    # thrust vector to shuttle rotation
+    # shuttle rotation based on thrust vector
     thrust_rad = vector_rho(target_thrust)
-    if thrust_rad > 0: thrust_rad = 0
+    magnitude_multiplier = -1
+    if thrust_rad > 0:
+        thrust_rad = thrust_rad - math.pi / 2
+        magnitude_multiplier = magnitude_multiplier * -1
     thrust_rad += math.pi / 2
     thrust_rad = -thrust_rad
 
     thrust_deg = round(math.degrees(thrust_rad))
 
     # thrust vector to magnitude
-    thrust_mag = -magnitude(target_thrust)
+    thrust_mag = magnitude(target_thrust) * magnitude_multiplier
     if (thrust_mag < 2): thrust_mag = 3
     if (thrust_mag > 4): thrust_mag = 4
     thrust_mag = round(thrust_mag)
@@ -211,7 +212,7 @@ while True:
 
     log('magnitude(target_thrust)', magnitude(target_thrust))
     log('vector_rho(target_thrust)', vector_rho(target_thrust))
-    log('thrust_rad', thrust_rad)
+    log('thrust_deg', thrust_deg)
     
     # subtract mars gravity to find thrust vector
 
