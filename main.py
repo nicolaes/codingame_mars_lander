@@ -118,25 +118,37 @@ while True:
     # turns until landing
     (turns_x, turns_y) = me.turns_to_plain((dist_x, dist_y))
 
-    rotation_offset = 0
+    new_rotation = direction(me.rot)
+    if abs(dist_x) > 0: 
+        if abs(me.hs) < max_hs:
+            new_rotation = - direction(dist_x)
+    else:
+        if abs(me.hs) > max_hs:
+            new_rotation = direction(me.hs)
+        elif abs(me.rot) > 0:
+            new_rotation = 0
+
+    thrust = 3
+    if abs(me.vs) > max_vs / 2:
+        thrust = 4
+            
     
-
     # start turning if horizontal area not reached in time
-    if turns_x > 50 and abs(me.rot) <= 30:
-        rotation_offset = -direction(dist_x)
+    # if turns_x > 50 and abs(me.rot) <= 30:
+    #     rotation_offset = -direction(dist_x)
 
-    # stop turning if area reached in reasonable time  
-    elif turns_x < 20:
-        if abs(dist_x) > 0:
-            # mai exista de mers pana la plan, dar avem viteza suficienta > ne intoarcem invers
-            rotation_offset = direction(dist_x)
-        elif me.hs > max_hs:
-            # am ajuns la plan, dar viteza orizontala e prea mare
-            rotation_offset = direction(me.hs)
+    # # stop turning if area reached in reasonable time  
+    # elif turns_x < 20:
+    #     if abs(dist_x) > 0:
+    #         # mai exista de mers pana la plan, dar avem viteza suficienta > ne intoarcem invers
+    #         rotation_offset = direction(dist_x)
+    #     elif me.hs > max_hs:
+    #         # am ajuns la plan, dar viteza orizontala e prea mare
+    #         rotation_offset = direction(me.hs)
 
             #rot_offset = - direction(me.rot)
 
     log(turns_x, turns_y)
 
     # R P. R is the desired rotation angle. P is the desired thrust power.
-    print(f"{me.rot + rotation_offset * 3} 4")
+    print(f"{new_rotation * 20} {thrust}")
