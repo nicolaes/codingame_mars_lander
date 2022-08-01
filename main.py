@@ -202,7 +202,7 @@ while True:
     thrust_deg = round(math.degrees(thrust_rad))
 
     # thrust vector to magnitude
-    thrust_mag = magnitude(target_thrust)
+    thrust_mag = -magnitude(target_thrust)
     if (thrust_mag < 0): thrust_mag = 0
     if (thrust_mag > 4): thrust_mag = 4
     thrust_mag = round(thrust_mag)
