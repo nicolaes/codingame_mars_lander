@@ -11,7 +11,35 @@ def direction(n: int) -> int:
     if n == 0: return 0
     return int(n / abs(n))
 
+def same_sign(x, y) -> bool:
+    return x ^ y >= 0
+
 Loc = Tuple[int, int]
+
+KPID = Tuple[float, float, float]
+class PID:
+    def __init__(self, k: KPID = (1.2, 0.9, 0.3)):
+        (self.kp, self.ki, self.kd) = k
+        self.iteration = 0
+
+    def set_target(self, target):
+        self.target = target
+        self.prev_error = target - target
+        self.cumulative_moving_average = self.prev_error
+
+    def make_iteration(self, measurement):
+        self.iteration += 1
+        error = measurement - self.target
+
+        rate_of_change = self.prev_error - error
+        self.cumulative_moving_average = (error + self.cumulative_moving_average * self.iteration) / (self.iteration + 1)
+        
+        proportional = error * self.kp
+        integral = self.cumulative_moving_average * self.ki
+        derivative = rate_of_change * self.kd
+
+        self.prev_error = error
+        return sum((proportional, integral, derivative))
 
 class Planet:
     def __init__(self, n: int):
@@ -43,6 +71,20 @@ class Rover:
             diff[0] = end_diff if end_diff < 0 else 0
         return tuple(diff)
 
+    def turns_to_plain(self, dist: Tuple[int, int]) -> Tuple[int, int]:
+        speed: Tuple[int, int] = (self.hs, self.vs)
+        
+        # d^s => direction and speed have the same sign
+        max_turns = 100
+        turns = tuple(
+            min(int(d/s), max_turns) 
+            if s != 0 and d^s >= 0 
+            else 100 
+            
+            for (d, s) in zip(dist, speed)
+        )
+        return turns
+
 (max_hs, max_vs) = (20, 40)
 
 # Save the Planet.
@@ -72,13 +114,29 @@ while True:
 
     # offset rotation
     (dist_x, dist_y) = me.dist_to_plain()
+    
+    # turns until landing
+    (turns_x, turns_y) = me.turns_to_plain((dist_x, dist_y))
 
     rotation_offset = 0
-    if abs(me.rot) <= 30:
+    
+
+    # start turning if horizontal area not reached in time
+    if turns_x > 50 and abs(me.rot) <= 30:
         rotation_offset = -direction(dist_x)
 
-    if dist_x == 0:
-        rotation_offset = - direction(me.rot)
+    # stop turning if area reached in reasonable time  
+    elif turns_x < 20:
+        if abs(dist_x) > 0:
+            # mai exista de mers pana la plan, dar avem viteza suficienta > ne intoarcem invers
+            rotation_offset = direction(dist_x)
+        elif me.hs > max_hs:
+            # am ajuns la plan, dar viteza orizontala e prea mare
+            rotation_offset = direction(me.hs)
+
+            #rot_offset = - direction(me.rot)
+
+    log(turns_x, turns_y)
 
     # R P. R is the desired rotation angle. P is the desired thrust power.
-    print(f"{me.rot + rotation_offset * 3} 3")
+    print(f"{me.rot + rotation_offset * 3} 4")
