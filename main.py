@@ -5,6 +5,7 @@ from typing import Tuple, Union
 import numpy as np
 
 Loc = Tuple[int, int]
+Dir = Tuple[float, float]
 Vector = Tuple[Loc, Loc]
 
 def log(*args):
@@ -23,15 +24,12 @@ def speed(hs: int, vs: int) -> float:
 def np_to_tuple(v) -> Vector:
     return tuple(map(tuple, v))
 
-def magnitude(v: Vector) -> float:
-    a, b = v
-    return math.hypot(*tuple(np.subtract(b, a)))
+def magnitude(v) -> float:
+    return math.hypot(*v)
 
-def vector_rho(v: Vector) -> float:
+def vector_rho(v: Dir) -> float:
     a, b = v
-    ax, ay = a
-    bx, by = b
-    return math.atan2(by -ay, bx - ax)
+    return math.atan2(b, a)
 
 def subtract_vectors(a: Vector, b: Vector) -> Vector:
     return tuple(np.subtract(a, b))
@@ -47,30 +45,25 @@ class PID:
         (self.kp, self.ki, self.kd) = k
         self.iteration = 0
 
-    def set_target(self, target: tuple):
-        self.target: Vector = target
-        self.prev_error: Vector = tuple(np.subtract(target, target))
-        self.cumulative_moving_average: Vector = self.prev_error
+    def set_target(self, target):
+        self.target = np.array(target)
+        self.prev_error = np.zeros_like(target)
+        self.cumulative_moving_average = self.prev_error
 
-    def make_iteration(self, measurement: tuple) -> tuple:
+    def make_iteration(self, measurement):
         self.iteration += 1
-        error = tuple(np.subtract(measurement, self.target))
+        error = np.array(measurement) - self.target
         
-        rate_of_change = np.subtract(self.prev_error, error)
-        self.cumulative_moving_average = tuple(
-            np.divide(
-                np.add(error, np.multiply(self.cumulative_moving_average, self.iteration)),
-                self.iteration + 1
-            )
-        )
+        rate_of_change = self.prev_error - error
+        self.cumulative_moving_average = (error + self.cumulative_moving_average * self.iteration) / (self.iteration + 1)
         
-        proportional = np.multiply(error, self.kp)
-        integral = np.multiply(self.cumulative_moving_average, self.ki)
-        derivative = np.multiply(rate_of_change, self.kd)
+        proportional = error * self.kp
+        integral = self.cumulative_moving_average * self.ki
+        derivative = rate_of_change * self.kd
 
         self.prev_error = error
-        delta_vector = np.multiply(np.add(proportional, integral, derivative), -1)
-        return tuple(map(tuple, delta_vector))
+        delta_vector = (proportional + integral + derivative) * -1
+        return delta_vector
 
 class Planet:
     def __init__(self, n: int):
@@ -92,8 +85,8 @@ class Rover:
     def __init__(self, planet, x, y, hs, vs, f, r, p):
         self.planet = planet
         self.loc: Loc = (x, y)
-        self.hs = hs
-        self.vs = vs
+        self.hs: int = hs
+        self.vs: int = vs
         self.fuel = f
         self.rot = r
         self.rotRad = r / 180 * math.pi
@@ -105,6 +98,24 @@ class Rover:
             end_diff = self.planet.plain_end[0] - self.loc[0]
             diff[0] = end_diff if end_diff < 0 else 0
         return tuple(diff)
+
+    def dist_to_target_speed(self, v_final: Dir = (0, 0)):
+        # t = (vf - vi) / a
+        # dist = vi * t + 1/2 a * t^2
+
+        v_final_np = np.array(v_final)
+        v_init = np.array((self.hs, self.vs))
+        v_diff = v_final_np - v_init
+        
+        # split max acceleration between X and Y to reach v_diff evenly
+        v_theta = math.atan2(*np.flip(v_diff))
+        max_vertical_acc = mars_g if v_theta < 0 else 4 - mars_g
+        acc = np.array((math.cos(v_theta), math.sin(v_theta))) * (4, max_vertical_acc)
+        
+        acc_no_zero = np.where(acc != 0, acc, 1)
+        time = v_diff / acc_no_zero
+        dist = v_init * time + 1/2 * acc * time ** 2
+        return dist
 
     def turns_to_plain(self, dist: Tuple[int, int]) -> Tuple[int, int]:
         speed: Tuple[int, int] = (self.hs, self.vs)
@@ -120,7 +131,7 @@ class Rover:
         )
         return turns
 
-(max_hs, max_vs) = (20, 40)
+max_hs, max_vs = 20, 40
 mars_g = 3.711
 
 # Save the Planet.
@@ -128,7 +139,11 @@ mars_g = 3.711
 
 n = int(input())  # the number of points used to draw the surface of Mars.
 planet: Planet = Planet(n)
-target_vector_pid = PID()
+target_vector_pid = PID((1, 0.7, 0.3))
+
+# PID based on distance from target and landing offset
+distance_pid = PID((1.2, 0, 0))
+distance_pid.set_target((0, 0)) # target is to reach (0, 0) offset to LZ (e.g. land)
 
 for i in range(n):
     # land_x: X coordinate of a surface point. (0 to 6999)
@@ -149,93 +164,42 @@ while True:
     x, y, hs, vs, f, r, p = [int(i) for i in input().split()]
     me = Rover(planet, x, y, hs, vs, f, r, p)
 
-    # offset rotation
-    (dist_x, dist_y) = me.dist_to_plain()
+    # how far is LZ
+    dist = me.dist_to_target_speed((20, 20))
+    lz_landing_offset = dist + me.loc - me.planet.plain_mid    
+    target_delta = distance_pid.make_iteration(lz_landing_offset)
     
-    # turns until landing
-    (turns_x, turns_y) = me.turns_to_plain((dist_x, dist_y))
-
-    new_rotation = sign(me.rot)
-    if abs(dist_x) > 0: 
-        if abs(me.hs) < max_hs:
-            new_rotation = - sign(dist_x)
-    else:
-        if abs(me.hs) > max_hs:
-            new_rotation = sign(me.hs)
-        elif abs(me.rot) > 0:
-            new_rotation = 0
-
-    thrust = 3
-    if abs(me.vs) > max_vs / 2:
-        thrust = 4
+    # log('lz_landing_offset', lz_landing_offset)
     
-    
-    if not hasattr(target_vector_pid, 'target'):
-        target_direction: Vector = (me.loc, me.planet.plain_mid)
-        target_magnitude = math.hypot(max_hs, max_vs) * 1
-        target_vector: Vector = tuple(np.multiply(
-            target_direction,
-            target_magnitude / magnitude(target_direction)
-        ))
-        target_vector_pid.set_target(target_vector)
-
-        log('target_direction', center_vector(target_direction))
-        log('target_vector', center_vector(target_vector))
-
-    my_vector = ((0, 0), (me.hs, me.vs))
-
-    # direction to ground
-    target_delta = target_vector_pid.make_iteration(my_vector)
-    
-    # direction of thrust cosnidering gravity
-    mars_gravity_vector = ((0, 0), (0, -mars_g))
-    target_thrust = np_to_tuple(np.subtract(target_delta, mars_gravity_vector))
+    # direction of thrust considering gravity
+    mars_gravity_vector = (0, -mars_g)
+    target_acceleration = (target_delta - mars_gravity_vector) * -1
 
     # shuttle rotation based on thrust vector
-    thrust_rad = vector_rho(target_thrust)
+    acceleration_rad = vector_rho(target_acceleration)
     magnitude_multiplier = -1
-    if thrust_rad > 0:
-        thrust_rad = thrust_rad - math.pi / 2
+    if acceleration_rad > 0:
+        acceleration_rad = acceleration_rad - math.pi
         magnitude_multiplier = magnitude_multiplier * -1
-    thrust_rad += math.pi / 2
-    thrust_rad = -thrust_rad
+    acceleration_rad += math.pi / 2
+    acceleration_rad = -acceleration_rad
 
-    thrust_deg = round(math.degrees(thrust_rad))
+    thrust_deg = round(math.degrees(acceleration_rad))
 
     # thrust vector to magnitude
-    thrust_mag = magnitude(target_thrust) * magnitude_multiplier
+    thrust_mag = magnitude(target_acceleration) * magnitude_multiplier
     if (thrust_mag < 2): thrust_mag = 3
     if (thrust_mag > 4): thrust_mag = 4
     thrust_mag = round(thrust_mag)
 
-    #log('target_delta', center_vector(target_delta)[1])
-
-    log('magnitude(target_thrust)', magnitude(target_thrust))
-    log('vector_rho(target_thrust)', vector_rho(target_thrust))
-    log('thrust_deg', thrust_deg)
+    log('delta - vect:', target_delta)
+    log('accel - vect:', target_acceleration)
+    log('acc - magn:', magnitude(target_acceleration))
+    log('acc - grad:', math.degrees(vector_rho(target_acceleration)))
+    # log('thrust_deg', thrust_deg)
     
-    # subtract mars gravity to find thrust vector
-
-    
-    
-    # start turning if horizontal area not reached in time
-    # if turns_x > 50 and abs(me.rot) <= 30:
-    #     rotation_offset = -direction(dist_x)
-
-    # # stop turning if area reached in reasonable time  
-    # elif turns_x < 20:
-    #     if abs(dist_x) > 0:
-    #         # mai exista de mers pana la plan, dar avem viteza suficienta > ne intoarcem invers
-    #         rotation_offset = direction(dist_x)
-    #     elif me.hs > max_hs:
-    #         # am ajuns la plan, dar viteza orizontala e prea mare
-    #         rotation_offset = direction(me.hs)
-
-            #rot_offset = - direction(me.rot)
-
     
     # R P. R is the desired rotation angle. P is the desired thrust power.
-    # print(f"{new_rotation * 20} {thrust}")
     out = f"{thrust_deg} {thrust_mag}"
     log('out', out)
-    print(f"{thrust_deg} {thrust_mag}")
+    print(out)
