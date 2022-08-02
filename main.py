@@ -112,6 +112,12 @@ class Rover:
         max_vertical_acc = mars_g if v_theta < 0 else 4 - mars_g
         acc = np.array((math.cos(v_theta), math.sin(v_theta))) * (4, max_vertical_acc)
         
+        log('v_final_np', v_final_np)
+        log('v_init', v_init)
+        log('v_diff', v_diff)
+        log('v_theta', math.degrees(v_theta))
+        log('acc', acc)
+        
         acc_no_zero = np.where(acc != 0, acc, 1)
         time = v_diff / acc_no_zero
         dist = v_init * time + 1/2 * acc * time ** 2
@@ -142,7 +148,7 @@ planet: Planet = Planet(n)
 target_vector_pid = PID((1, 0.7, 0.3))
 
 # PID based on distance from target and landing offset
-distance_pid = PID((1.2, 0, 0))
+distance_pid = PID((1.2, 0.9, 0.3))
 distance_pid.set_target((0, 0)) # target is to reach (0, 0) offset to LZ (e.g. land)
 
 for i in range(n):
@@ -165,14 +171,15 @@ while True:
     me = Rover(planet, x, y, hs, vs, f, r, p)
 
     # how far is LZ
-    dist = me.dist_to_target_speed((20, 20))
+    dist = me.dist_to_target_speed((20, -20))
     lz_landing_offset = dist + me.loc - me.planet.plain_mid    
     target_delta = distance_pid.make_iteration(lz_landing_offset)
     
-    # log('lz_landing_offset', lz_landing_offset)
+    log('lz_landing_offset', lz_landing_offset)
     
     # direction of thrust considering gravity
-    mars_gravity_vector = (0, -mars_g)
+    turns_for_gravity_to_act = 5
+    mars_gravity_vector = np.array((0, -mars_g)) * turns_for_gravity_to_act
     target_acceleration = (target_delta - mars_gravity_vector) * -1
 
     # shuttle rotation based on thrust vector
