@@ -115,29 +115,32 @@ class Rover:
 
         # split max acceleration between X and Y to reach v_diff evenly
         acc_theta = math.atan2(*np.flip(v_diff))
-        max_vertical_acc = mars_g if acc_theta < 0 else 4 - mars_g
-        acc = np.array((math.sin(acc_theta), math.cos(acc_theta))) * (4, max_vertical_acc)
 
+
+        if acc_theta < 0:
+            max_horiz_acc = 4
+            max_vertical_acc = mars_g
+        else:
+            max_horiz_acc = math.sqrt(1 - mars_g ** 2 / 16) * 4
+            max_vertical_acc = 4 - mars_g
+        
+        acc = np.array((math.cos(acc_theta), math.sin(acc_theta))) * (max_horiz_acc, max_vertical_acc)
         acc_no_zero = np.where(acc != 0, acc, 1)
         time = v_diff / acc_no_zero
 
-        # greseala: cand urci in sus, viteza laterala nu mai e 4, e mult mai mica
-        
-        log('time', time)
+        # log('time', max_horiz_acc)
+        # log('max_vertical_acc', max_vertical_acc)
+        # log('acc_theta', acc_theta)
 
-        # time_x = v_diff_x / acc_x
-        # time_y = v_diff_y / acc_y
-        # v_diff_x / acc_x = v_diff_y / acc_y
-        # v_diff_x / v_diff_y = acc_x / acc_y
-        # atan2(acc_y, acc_x) = v_theta
+        # it takes 6 turns to start accelerating up if shuttle is lateral
+        # + account for stopping the current acceleration
+        time += 6
 
         dist = v_init * time + 1/2 * acc * time ** 2
 
         # V_init_y = -22 * 116 + 1/2 * 0.2 * 116^2
 
         # distanta in care Vx si Vy ajung la 0 in acelasi timp
-        # log('dist  ', dist)
-        log('')
         return dist
 
     def turns_to_plain(self, dist: Tuple[int, int]) -> Tuple[int, int]:
@@ -165,11 +168,11 @@ planet: Planet = Planet(n)
 
 # PID based on distance from target and landing offset
 
-#########
-Kp = 1 ##
-Ki = 0 ##
-Kd = 0 ##
-#########
+###########
+Kp = 2.5 ##
+Ki = 0.0 ##
+Kd = 0.00 #
+###########
 
 distance_pid = PID((Kp, Ki, Kd))
 distance_pid.set_target((0, 0)) # target is to reach (0, 0) offset to LZ (e.g. land)
@@ -194,13 +197,11 @@ while True:
     me = Rover(planet, x, y, hs, vs, f, r, p)
 
     # how far is LZ
-    dist = me.dist_to_reach_speed((0, 0))
-    log('dist', dist)
+    dist = me.dist_to_reach_speed(np.array([0, 0]) * 1/2)
+    log('dist   ', dist)
 
     # unde ajung la V = (0, 0) daca pun frana cu toata puterea:
     projected_stopping_location = dist + me.loc
-    # log('projected_stopping_location', projected_stopping_location)
-    # log('')
     
     # dorinta mea: sa ajung la LZ
     # in ce directie ar trebui sa ma deplasez?
@@ -241,11 +242,18 @@ while True:
     if (thrust > 4): thrust = 4
     thrust = round(thrust)
 
-    # log('ROAD TO LZ:', road_to_lz)
-    # log('ADJUST    :', PID_adjust_to_lz)
-    # log('acc - magn:', magnitude(target_acceleration))
-    # log('acc - grad:', math.degrees(acc_rho))
-    # log('thrust    :', thrust)
+    # take over just before landing if params are correct
+    dist_to_lz = me.dist_to_plain()
+    time_to_land = abs(dist_to_lz[1] / me.vs) if me.vs !=0 else 1000
+    if dist_to_lz[0] == 0 and time_to_land < 3 and me.hs < max_hs and me.vs < max_vs:
+        shuttle_rotation = 0
+        thrust = 3
+
+    log('ROAD TO LZ:', road_to_lz)
+    log('ADJUST    :', PID_adjust_to_lz)
+    log('acc - magn:', magnitude(target_acceleration))
+    log('acc - grad:', math.degrees(acc_rho))
+    log('thrust    :', thrust)
     
     
     # R P. R is the desired rotation angle. P is the desired thrust power.
