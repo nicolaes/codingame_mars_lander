@@ -15,9 +15,6 @@ def sign(n: int) -> int:
     if n == 0: return 0
     return 1 if n > 0 else -1
 
-def same_sign(x, y) -> bool:
-    return x ^ y >= 0
-
 def speed(hs: int, vs: int) -> float:
     return math.hypot(hs, vs) * sign(hs * vs)
 
@@ -96,6 +93,11 @@ class Rover:
         self.rotRad = r / 180 * math.pi
         self.power = p
 
+        rotation_rad = math.radians(self.rot + 90)
+        self.acc = np.array([ math.cos(rotation_rad), math.sin(rotation_rad) ]) * self.power
+        self.acc[1] -= mars_g
+        
+
     def dist_to_plain(self) -> Tuple[int, int]:
         diff = np.subtract(self.planet.plain_start, self.loc)
         if diff[0] < 0:
@@ -110,24 +112,25 @@ class Rover:
         v_final_np = np.array(v_final)
         v_init = np.array((self.hs, self.vs))
         v_diff = v_final_np - v_init
-        
+
         # split max acceleration between X and Y to reach v_diff evenly
         acc_theta = math.atan2(*np.flip(v_diff))
         max_vertical_acc = mars_g if acc_theta < 0 else 4 - mars_g
-        acc = np.array((math.cos(acc_theta), math.sin(acc_theta))) * (4, max_vertical_acc)
-        
+        acc = np.array((math.sin(acc_theta), math.cos(acc_theta))) * (4, max_vertical_acc)
+
         acc_no_zero = np.where(acc != 0, acc, 1)
         time = v_diff / acc_no_zero
 
-        # it takes 6 turns to start accelerating up if shuttle is lateral
-        # + account for stopping the current acceleration
-        time += 6
-
-        # log('v_init', v_init)
-        # log('v_diff', v_diff)
-        log('acc_theta   ', acc_theta)
-        # log('time  ', time)
+        # greseala: cand urci in sus, viteza laterala nu mai e 4, e mult mai mica
         
+        log('time', time)
+
+        # time_x = v_diff_x / acc_x
+        # time_y = v_diff_y / acc_y
+        # v_diff_x / acc_x = v_diff_y / acc_y
+        # v_diff_x / v_diff_y = acc_x / acc_y
+        # atan2(acc_y, acc_x) = v_theta
+
         dist = v_init * time + 1/2 * acc * time ** 2
 
         # V_init_y = -22 * 116 + 1/2 * 0.2 * 116^2
@@ -192,6 +195,7 @@ while True:
 
     # how far is LZ
     dist = me.dist_to_reach_speed((0, 0))
+    log('dist', dist)
 
     # unde ajung la V = (0, 0) daca pun frana cu toata puterea:
     projected_stopping_location = dist + me.loc
@@ -212,7 +216,6 @@ while True:
 
     # shuttle rotation based on acceleration vector direction
     acc_rho = vector_rho(target_acceleration)
-    log('acc_rho:', acc_rho)
     shuttle_rotation = 0
     if acc_rho > 0:
         # cadran 1 sau 2
@@ -241,8 +244,8 @@ while True:
     # log('ROAD TO LZ:', road_to_lz)
     # log('ADJUST    :', PID_adjust_to_lz)
     # log('acc - magn:', magnitude(target_acceleration))
-    # log('acc - grad:', math.degrees(vector_rho(target_acceleration)))
-    # log('thrust_deg', thrust_deg)
+    # log('acc - grad:', math.degrees(acc_rho))
+    # log('thrust    :', thrust)
     
     
     # R P. R is the desired rotation angle. P is the desired thrust power.
