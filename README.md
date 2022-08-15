@@ -1,5 +1,5 @@
 # 🚩 Consider solving the challenge before reading code
 
-### CodinGame algo for The Labyrinth game
+### CodinGame algo for Mars Lander game
 
-https://www.codingame.com/training/hard/the-labyrinth
+https://www.codingame.com/multiplayer/optimization/mars-lander
