@@ -8,6 +8,10 @@ Loc = Tuple[int, int]
 Dir = Tuple[float, float]
 Vector = Tuple[Loc, Loc]
 
+max_hs, max_vs = 20, 40
+mars_g = 3.711
+max_throttle = 4
+
 def log(*args):
     print(repr(args), file=sys.stderr, flush=True)
 
@@ -135,10 +139,33 @@ class Rover:
         # distanta in care Vx si Vy ajung la 0 in acelasi timp
         return (dist, time)
 
-    
+    def shuttle_orientation_to_obtain_acc_angle(self, acc_direction):
+        # wolphramalpha.com formula for circle equation:
+        # solve Sqrt[16-x^2]-3.711 = x * tan(t) for x, x = -4 to 4
 
-max_hs, max_vs = 20, 40
-mars_g = 3.711
+        # -Pi < acc_angle < Pi
+        acc_angle = math.atan2(*np.flip(acc_direction))
+        x_sign = np.sign(acc_direction[0])
+
+        # 2nd or 4th quadrant
+        min_acc_angle = math.atan2(-mars_g, max_throttle) * .999
+        max_acc_angle = math.atan2(-mars_g, -max_throttle) * .999
+        if (
+            acc_angle < min_acc_angle and
+            acc_angle > max_acc_angle
+        ): return math.atan2(0, x_sign) if x_sign != 0 else math.pi / 2
+        
+        x = x_sign * math.sqrt(
+                math.cos(acc_angle) ** 4 *
+                (max_throttle ** 2 * math.tan(acc_angle) ** 2 + 2.22848)
+            ) - 3.711 * math.sin(acc_angle) * math.cos(acc_angle)
+        
+        y = math.sqrt(16 - x ** 2)
+
+        return math.atan2(y, x)
+        
+
+    
 
 # Save the Planet.
 # Use less Fossil Fuel.
