@@ -8,10 +8,6 @@ Loc = Tuple[int, int]
 Dir = Tuple[float, float]
 Vector = Tuple[Loc, Loc]
 
-max_hs, max_vs = 20, 40
-mars_g = 3.711
-max_throttle = 4
-
 def log(*args):
     print(repr(args), file=sys.stderr, flush=True)
 
@@ -82,16 +78,17 @@ class Planet:
         self.plain_start: Loc = self.points[plain_at]
         self.plain_end: Loc = self.points[plain_at + 1]
         self.plain_mid: Loc = tuple(
-            int(sum(x) / 2) 
+            int(sum(x) // 2) 
             for x in zip(self.plain_start, self.plain_end)
         )
 
 class Rover:
     def __init__(self, planet, x, y, hs, vs, f, r, p):
         self.planet = planet
-        self.loc: Loc = (x, y)
+        self.loc: Loc = np.array([x, y])
         self.hs: int = hs
         self.vs: int = vs
+        self.speed = np.array([vs, hs])
         self.fuel = f
         self.rot = r
         self.rotRad = r / 180 * math.pi
@@ -120,52 +117,49 @@ class Rover:
         # split max acceleration between X and Y to reach v_diff evenly
         acc_theta = math.atan2(*np.flip(v_diff))
 
+
         if acc_theta < 0:
             max_horiz_acc = 4
             max_vertical_acc = mars_g
         else:
             max_horiz_acc = math.sqrt(1 - mars_g ** 2 / 16) * 4
             max_vertical_acc = 4 - mars_g
-
+        
         acc = np.array((math.cos(acc_theta), math.sin(acc_theta))) * (max_horiz_acc, max_vertical_acc)
         acc_no_zero = np.where(acc != 0, acc, 1)
         time = v_diff / acc_no_zero
 
-        # log('theta', math.degrees(acc_theta))
-        # log('acc', acc)
+        # log('time', max_horiz_acc)
+        # log('max_vertical_acc', max_vertical_acc)
+        # log('acc_theta', acc_theta)
+
+        # it takes 6 turns to start accelerating up if shuttle is lateral
+        # + account for stopping the current acceleration
+        time += 6
 
         dist = v_init * time + 1/2 * acc * time ** 2
 
+        # V_init_y = -22 * 116 + 1/2 * 0.2 * 116^2
+
         # distanta in care Vx si Vy ajung la 0 in acelasi timp
-        return (dist, time)
+        return dist
 
-    def shuttle_orientation_to_obtain_acc_angle(self, acc_direction):
-        # wolphramalpha.com formula for circle equation:
-        # solve Sqrt[16-x^2]-3.711 = x * tan(t) for x, x = -4 to 4
-
-        # -Pi < acc_angle < Pi
-        acc_angle = math.atan2(*np.flip(acc_direction))
-        x_sign = np.sign(acc_direction[0])
-
-        # 2nd or 4th quadrant
-        min_acc_angle = math.atan2(-mars_g, max_throttle) * .999
-        max_acc_angle = math.atan2(-mars_g, -max_throttle) * .999
-        if (
-            acc_angle < min_acc_angle and
-            acc_angle > max_acc_angle
-        ): return math.atan2(0, x_sign) if x_sign != 0 else math.pi / 2
+    def turns_to_plain(self, dist: Tuple[int, int]) -> Tuple[int, int]:
+        speed: Tuple[int, int] = (self.hs, self.vs)
         
-        x = x_sign * math.sqrt(
-                math.cos(acc_angle) ** 4 *
-                (max_throttle ** 2 * math.tan(acc_angle) ** 2 + 2.22848)
-            ) - 3.711 * math.sin(acc_angle) * math.cos(acc_angle)
-        
-        y = math.sqrt(16 - x ** 2)
+        # d^s => direction and speed have the same sign
+        max_turns = 100
+        turns = tuple(
+            min(int(d/s), max_turns) 
+            if s != 0 and d^s >= 0 
+            else 100 
+            
+            for (d, s) in zip(dist, speed)
+        )
+        return turns
 
-        return math.atan2(y, x)
-        
-
-    
+max_hs, max_vs = 20, 40
+mars_g = 3.711
 
 # Save the Planet.
 # Use less Fossil Fuel.
@@ -176,9 +170,9 @@ planet: Planet = Planet(n)
 # PID based on distance from target and landing offset
 
 ###########
-Kp = 2.0 ##
-Ki = 0.1 ##
-Kd = 0.10 #
+Kp = 2.5 ##
+Ki = 0.0 ##
+Kd = 0.00 #
 ###########
 
 distance_pid = PID((Kp, Ki, Kd))
@@ -194,6 +188,7 @@ for i in range(n):
 planet.on_surface_complete()
 
 # game loop
+large_ratio_increased = 0
 while True:
     # hs: the horizontal speed (in m/s), can be negative.
     # vs: the vertical speed (in m/s), can be negative.
@@ -204,39 +199,22 @@ while True:
     me = Rover(planet, x, y, hs, vs, f, r, p)
 
     # how far is LZ
-    (dist, time_to_reach_speed) = me.dist_to_reach_speed(np.array([0, 0]) * 1/2)
+    dist = me.dist_to_reach_speed(np.array([0, 0]) * 1/2)
     
     # unde ajung la V = (0, 0) daca pun frana cu toata puterea:
     projected_stopping_location = dist + me.loc
     
     # dorinta mea: sa ajung la LZ
     # in ce directie ar trebui sa ma deplasez?
-    road_to_lz = np.array(me.planet.plain_mid) + (0, 100) - projected_stopping_location
-    
+    road_to_lz = np.array(me.planet.plain_mid) - projected_stopping_location
+
     # PID determines how much should we correct for error
     PID_adjust_to_lz = distance_pid.make_iteration(road_to_lz)
 
-    # split max acceleration between X and Y to reach v_diff evenly
-    acc_theta = math.atan2(*np.flip(PID_adjust_to_lz * -1))
-    if acc_theta < 0:
-        max_horiz_acc = 4
-        max_vertical_acc = mars_g
-    else:
-        max_horiz_acc = math.sqrt(1 - mars_g ** 2 / 16) * 4
-        max_vertical_acc = 4 - mars_g
-
-    acc = np.array((math.cos(acc_theta), math.sin(acc_theta))) * (max_horiz_acc, max_vertical_acc)
-
-    log('PID_adjust_to_lz', PID_adjust_to_lz)
-    log('acc_theta', math.degrees(acc_theta))
-    log('acc', acc)
-
     # direction of acceleration considering gravity
-    mars_acceleration_vector = np.array((0, -mars_g))
-    target_acceleration = (acc - mars_acceleration_vector)
-
-    log('target_acceleration', target_acceleration)
-    
+    turns_for_gravity_to_act = 1
+    mars_acceleration_vector = np.array((0, -mars_g)) * turns_for_gravity_to_act
+    target_acceleration = (PID_adjust_to_lz - mars_acceleration_vector) * -1
 
     # shuttle rotation based on acceleration vector direction
     acc_rho = vector_rho(target_acceleration)
@@ -268,9 +246,33 @@ while True:
     # take over just before landing if params are correct
     dist_to_lz = me.dist_to_plain()
     time_to_land = abs(dist_to_lz[1] / me.vs) if me.vs !=0 else 1000
-    if dist_to_lz[0] == 0 and time_to_land < 3 and abs(me.hs) < abs(max_hs) and abs(me.vs) < abs(max_vs):
+    if dist_to_lz[0] == 0 and time_to_land < 3 and me.hs < max_hs and me.vs < max_vs:
         shuttle_rotation = 0
         thrust = 3
+
+    # log('ROAD TO LZ:', road_to_lz)
+    # log('ADJUST    :', PID_adjust_to_lz)
+    # log('acc - magn:', magnitude(target_acceleration))
+    # log('acc - grad:', math.degrees(acc_rho))
+    # log('thrust    :', thrust)
+
+    turns_to_lz = np.array(me.planet.plain_mid) - me.loc
+    turns_to_lz = np.floor_divide(turns_to_lz, me.speed, 
+        out = np.full_like(me.speed, 1000), where = me.speed!= 0)
+    # log('turns_to_lz', turns_to_lz)
+
+    turns_to_lz = np.abs(turns_to_lz)
+    turns_to_lz_ratio = turns_to_lz[0] / turns_to_lz[1] if turns_to_lz[1] != 0 else 1000
+    # log('turns_to_lz_ratio', turns_to_lz_ratio)
+
+    if turns_to_lz_ratio > 20 or (
+        large_ratio_increased > 20 and 
+        turns_to_lz_ratio > 10
+    ):
+        shuttle_rotation = 0
+        thrust = 4
+        large_ratio_increased += 1
+    # log('large_ratio_increased', large_ratio_increased)
     
     # R P. R is the desired rotation angle. P is the desired thrust power.
     out = f"{shuttle_rotation} {thrust}"
